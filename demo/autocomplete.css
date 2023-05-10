@@ -44,6 +44,7 @@
   color: #738A9A;
   cursor: pointer;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 /*.nb_autocomplete__hints > li:hover,*/

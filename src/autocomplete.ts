@@ -41,22 +41,40 @@ function getHeightForced(el: HTMLElement) {
   return height
 }
 
+function getTextWidth(str: string) {
+  const div = document.createElement('div')
+  div.style.cssText = 'position:fixed;top:0;left:0;overflow:auto;visibility:hidden;' +
+    'pointer-events:none;height:unset;max-height:unset;width:unset;max-width:unset;white-space: nowrap;'
+  div.innerText = str
+  document.body.append(div)
+  const { width } = div.getBoundingClientRect()
+  div.remove()
+  return width ?? 0
+}
+
 /* ========== End utils functions ========== */
 
 class DomUtils {
   public static css(el: HTMLElement, list: Record<string, string>) {
-    const format = (str: string) => {
-      const f = (m: string) => '-' + m.toLowerCase()
-      return trim(str.replace(/[A-Z]/g, f), '-')
-    }
-
     for (const k in list) {
-      el.style.setProperty(format(k), list[k]!)
+      el.style.setProperty(DomUtils.format(k), list[k]!)
     }
   }
 
   public static height(el?: HTMLElement) {
     return round(el?.getBoundingClientRect().height || 0)
+  }
+
+  public static style(el: HTMLElement, names: string[]) {
+    return names.map(it => {
+      const name = DomUtils.format(it)
+      return window.getComputedStyle(el).getPropertyValue(name)
+    })
+  }
+
+  private static format(str: string) {
+    const f = (m: string) => '-' + m.toLowerCase()
+    return trim(str.replace(/[A-Z]/g, f), '-')
   }
 }
 
@@ -69,7 +87,7 @@ type ListOfCompleteData = ItemCompleteData[]
 
 type MaybeCompleteAttrs = {
   /** Событие выбора подсказки */
-  onSelect?: (value: string) => void
+  onSelect?: ((value: string) => void) | undefined
 }
 
 export type CompleteAttrs = {
@@ -152,6 +170,9 @@ class Autocomplete {
     this.doRender()
     this.doEvents()
 
+    if (this.attrs.isAdaptiveField)
+      this.setAdaptiveWidth()
+
     this.isInitialized = true
   }
 
@@ -172,6 +193,16 @@ class Autocomplete {
   /*
    * ======== Methods ========
    */
+
+  private setAdaptiveWidth(text?: string) {
+    const value = text || this.input.value || this.input.placeholder
+    const width = getTextWidth(value) + 4
+    const padding = DomUtils.style(this.input, ['paddingLeft', 'paddingRight'])
+    const vertical = padding.map(it => parseFloat(it)).reduce((n, it) => n + it, 0)
+    const total = width + vertical
+
+    DomUtils.css(this.input, { maxWidth: `${round(total)}px` })
+  }
 
   private doRender() {
     const parent = this.input.parentElement!
@@ -264,6 +295,11 @@ class Autocomplete {
     }
 
     return slice.map(renderItem)
+  }
+
+  private toShowHintsBox() {
+    if (this.getCountHints() > 0 && !this.isSelected)
+      this.setHintsVisible(true)
   }
 
   private selectHintValue(i = 0) {
@@ -363,6 +399,9 @@ class Autocomplete {
     this.setActiveHint(-1)
     this.setPlaceholder(null)
     this.hideHelperText()
+
+    if (this.attrs.isAdaptiveField)
+      this.setAdaptiveWidth()
   }
 
   private selectFirstHint() {
@@ -378,10 +417,7 @@ class Autocomplete {
    */
 
   private onFieldFocus() {
-    if (this.getCountHints() < 1 || this.isSelected)
-      return
-
-    this.setHintsVisible(true)
+    this.toShowHintsBox()
   }
 
   private onFieldBlur() {
@@ -393,7 +429,7 @@ class Autocomplete {
   }
 
   private onFieldPress(e: KeyboardEvent) {
-    const usingKeys = ['ArrowRight', 'Enter', 'ArrowDown', 'ArrowUp', 'Escape']
+    const usingKeys = ['ArrowRight', 'Enter', 'ArrowDown', 'ArrowUp', 'Escape', 'Space']
 
     if (!usingKeys.includes(e.code)) return
     if (this.isSelected) return
@@ -415,6 +451,10 @@ class Autocomplete {
         break
       case 'Escape':
         this.toHideHintsBox()
+        break
+      case 'Space':
+        if (!e.ctrlKey) return
+        this.toShowHintsBox()
         break
     }
   }
@@ -508,6 +548,10 @@ class Autocomplete {
    * ======== Utils ========
    */
 
+  private randomId() {
+    Math.floor(Math.random() * Date.now()).toString(36)
+  }
+
   private filterHintItems() {
     const value = this.input.value.toLowerCase()
 
@@ -545,4 +589,38 @@ class Autocomplete {
   }
 }
 
-export default Autocomplete
+/* ======== Demo initialize plugin  ======== */
+
+function initDemoAutocomplete() {
+  const data = [
+    'Москва', 'Санкт-Петербург', 'Астана', 'Новосибирск', 'Екатеринбург', 'Казань', 'Мурманск', 'Нижний Новгород',
+    'Ижевск', 'Красноярск', 'Челябинск', 'Чебоксары', 'Набережные Челны', 'Омск', 'Иркутск', 'Самара', 'Тюмень',
+    'Уфа', 'Ульяновск', 'Владимир', 'Суздаль', 'Алматы', 'Киров', 'Вологда', 'Барнаул', 'Урюпинск',
+  ]
+
+  /*
+   * Параметры автокомплита
+   */
+  const config: CompleteAttrs = {
+    suggestions: data,
+    useHelperText: false,
+    isAdaptiveField: true,
+    qtyDisplayHints: 8,
+    selectFirstOnBlur: true,
+    limit: 30,
+    baseClass: 'nb_autocomplete',
+    onSelect: (value) => {
+      console.log(value)
+    },
+  }
+
+  const input = document.querySelector<HTMLInputElement>('#input')
+  const complete = new Autocomplete(input!, config)
+
+  /*
+   * Инициализировать можно как сразу так и потом когда будет необходимо
+   */
+  complete.init()
+}
+
+initDemoAutocomplete()

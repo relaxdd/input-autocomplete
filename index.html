@@ -20,13 +20,13 @@
     <h2>Hello world!</h2>
 
     <div class="field-group">
-      <input type="text" id="input" placeholder="Введите название города">
+      <input type="text" id="input" placeholder="Введите название города" style="max-width: 70px;">
     </div>
   </div>
 </main>
-<script type="module">
-  import Autocomplete from './dist/autocomplete.js';
 
+<script src="dist/autocomplete.js"></script>
+<script>
   (function () {
     function initEventSource() {
       const evn = new EventSource('http://localhost:3000/subscribe');
@@ -41,39 +41,8 @@
       };
     }
 
-    function initDemoAutocomplete() {
-      const data = [
-        'Москва', 'Санкт-Петербург', 'Астана', 'Новосибирск', 'Екатеринбург', 'Казань', 'Мурманск', 'Нижний Новгород',
-        'Ижевск', 'Красноярск', 'Челябинск', 'Чебоксары', 'Набережные Челны', 'Омск', 'Иркутск', 'Самара', 'Тюмень',
-        'Уфа', 'Ульяновск', 'Владимир', 'Суздаль', 'Алматы', 'Киров', 'Вологда',
-      ];
 
-      /*
-       * Параметры автокомплита
-       */
-      const config: CompleteAttrs = {
-        suggestions: data,
-        useHelperText: false,
-        isAdaptiveField: true,
-        qtyDisplayHints: 8,
-        selectFirstOnBlur: true,
-        limit: 30,
-        baseClass: 'nb_autocomplete',
-        onSelect: (value) => {
-          console.log(value);
-        },
-      };
-
-      const input = document.querySelector<HTMLInputElement>('#input');
-      const complete = new Autocomplete(input, config);
-
-      /*
-       * Инициализировать можно как сразу так и потом когда будет необходимо
-       */
-      complete.init();
-    }
-
-    initDemoAutocomplete();
+    // initDemoAutocomplete();
     // initEventSource()
   })();
 </script>
