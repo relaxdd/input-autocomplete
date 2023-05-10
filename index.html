@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta
-    name="viewport"
-    content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0"
+      name="viewport"
+      content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0"
   >
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
 
   <title>Input Autocomplete</title>
 
-  <link href="./dist/demo-css/normalize.css" rel="stylesheet">
-  <link href="./dist/demo-css/style.css" rel="stylesheet">
-  <link href="./dist/autocomplete.css" rel="stylesheet">
+  <link href="./demo/normalize.css" rel="stylesheet">
+  <link href="./demo/style.css" rel="stylesheet">
+  <link href="./demo/autocomplete.css" rel="stylesheet">
 </head>
 <body>
 <main>
@@ -24,47 +24,58 @@
     </div>
   </div>
 </main>
-
 <script type="module">
-  import NbAutocomplete from './dist/autocomplete.js'
+  import Autocomplete from './dist/autocomplete.js';
 
   (function () {
     function initEventSource() {
-      const evn = new EventSource('http://localhost:3000/subscribe')
+      const evn = new EventSource('http://localhost:3000/subscribe');
 
       // evn.onopen = function (ev) {console.log('open')}
       evn.onerror = function (ev) {
-        console.error('Error: undefined')
-      }
+        console.error('Error: undefined');
+      };
 
       evn.onmessage = function () {
-        window.location.reload()
-      }
+        window.location.reload();
+      };
     }
 
-    function initAutocomplete() {
-      (function () {
-        const data = [
-          'Москва', 'Санкт-Петербург', 'Астана', 'Новосибирск', 'Екатеринбург', 'Казань', 'Мурманск', 'Нижний Новгород',
-          'Ижевск', 'Красноярск', 'Челябинск', 'Чебоксары', 'Набережные Челны', 'Омск', 'Иркутск', 'Самара', 'Тюмень',
-          'Уфа', 'Ульяновск', 'Владимир', 'Суздаль', 'Алматы', 'Киров', 'Вологда'
-        ]
+    function initDemoAutocomplete() {
+      const data = [
+        'Москва', 'Санкт-Петербург', 'Астана', 'Новосибирск', 'Екатеринбург', 'Казань', 'Мурманск', 'Нижний Новгород',
+        'Ижевск', 'Красноярск', 'Челябинск', 'Чебоксары', 'Набережные Челны', 'Омск', 'Иркутск', 'Самара', 'Тюмень',
+        'Уфа', 'Ульяновск', 'Владимир', 'Суздаль', 'Алматы', 'Киров', 'Вологда',
+      ];
 
-        const input = document.querySelector('#input')
-        const ac = new NbAutocomplete(input, data, {
-          onSelect() {
-            console.log('has been selected!')
-          }
-        })
+      /*
+       * Параметры автокомплита
+       */
+      const config: CompleteAttrs = {
+        suggestions: data,
+        useHelperText: false,
+        isAdaptiveField: true,
+        qtyDisplayHints: 8,
+        selectFirstOnBlur: true,
+        limit: 30,
+        baseClass: 'nb_autocomplete',
+        onSelect: (value) => {
+          console.log(value);
+        },
+      };
 
-        ac.init()
-        // ac.onSelect(() => {})
-      })()
+      const input = document.querySelector<HTMLInputElement>('#input');
+      const complete = new Autocomplete(input, config);
+
+      /*
+       * Инициализировать можно как сразу так и потом когда будет необходимо
+       */
+      complete.init();
     }
 
-    initEventSource()
-    initAutocomplete()
-  })()
+    initDemoAutocomplete();
+    // initEventSource()
+  })();
 </script>
 </body>
 </html>

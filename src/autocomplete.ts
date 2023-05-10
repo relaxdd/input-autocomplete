@@ -1,17 +1,66 @@
-function setStyle(el: HTMLElement, list: Record<string, string>) {
-  for (const prop in list)
-    el.style.setProperty(prop, list[prop]!)
-}
-
 function round(n: number, q = 1) {
-  return Math.round(n * 10 ** 1) / 10 ** q
+  return Math.round(n * (10 ** q)) / (10 ** q)
 }
 
-function getHeight(el?: HTMLElement) {
-  return round(el?.getBoundingClientRect().height || 0)
+function trim(str: string, char: string) {
+  let whitespace = [
+    ' ', '\n', '\r', '\t', '\f', '\x0b', '\xa0', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004',
+    '\u2005', '\u2006', '\u2007', '\u2008', '\u2009', '\u200a', '\u200b', '\u2028', '\u2029', '\u3000',
+  ].join('')
+  let l = 0
+  let i = 0
+  str += ''
+  if (char) {
+    whitespace = (char + '').replace(/([[\]().?/*{}+$^:])/g, '$1')
+  }
+  l = str.length
+  for (i = 0; i < l; i++) {
+    if (whitespace.indexOf(str.charAt(i)) === -1) {
+      str = str.substring(i)
+      break
+    }
+  }
+  l = str.length
+  for (i = l - 1; i >= 0; i--) {
+    if (whitespace.indexOf(str.charAt(i)) === -1) {
+      str = str.substring(0, i + 1)
+      break
+    }
+  }
+  return whitespace.indexOf(str.charAt(0)) === -1 ? str : ''
 }
 
-/* Utils functions */
+function getHeightForced(el: HTMLElement) {
+  const clone = el.cloneNode(true) as HTMLElement
+  const width = el.getBoundingClientRect().width
+  clone.style.cssText = 'position:fixed;top:0;left:0;overflow:auto;visibility:hidden;' +
+    'pointer-events:none;height:unset;max-height:unset;width:' + width + 'px'
+  document.body.append(clone)
+  const height = clone.getBoundingClientRect().height
+  clone.remove()
+  return height
+}
+
+/* ========== End utils functions ========== */
+
+class DomUtils {
+  public static css(el: HTMLElement, list: Record<string, string>) {
+    const format = (str: string) => {
+      const f = (m: string) => '-' + m.toLowerCase()
+      return trim(str.replace(/[A-Z]/g, f), '-')
+    }
+
+    for (const k in list) {
+      el.style.setProperty(format(k), list[k]!)
+    }
+  }
+
+  public static height(el?: HTMLElement) {
+    return round(el?.getBoundingClientRect().height || 0)
+  }
+}
+
+/* ========== End dom utils class ========== */
 
 type DataKeys = 'value' | 'label'
 type CompleteOptionsObj = Record<DataKeys, string>
@@ -23,7 +72,8 @@ type MaybeCompleteAttrs = {
   onSelect?: (value: string) => void
 }
 
-type CompleteAttrs = {
+export type CompleteAttrs = {
+  suggestions: ListOfCompleteData
   /** Лимит вывода подсказок в боксе, поставьте -1 для отключения лимита */
   limit?: number,
   /** Базовый класс элементов плагина */
@@ -34,45 +84,48 @@ type CompleteAttrs = {
   useHelperText?: boolean,
   /** Кол-во видимых подсказок */
   qtyDisplayHints?: number,
+  /** Подстраивать размер поля ввода под текст? */
+  isAdaptiveField?: boolean
 } & MaybeCompleteAttrs
 
 type ReqCompleteAttrs = Required<Omit<CompleteAttrs, 'onSelect'>> & MaybeCompleteAttrs
 
+type EnumCompleteEvents = 'select'
+type CompleteEventsList = Record<EnumCompleteEvents, ((value: string) => void)[]>
+
 /**
- * TODO: Разделить логику комплита для blur и click/enter/arrowRight
- *
  * @version 1.0.0
  * @author awenn2015
  */
-class NbAutocomplete {
+class Autocomplete {
   private readonly input: HTMLInputElement
   private readonly hints: HTMLUListElement
   private readonly helper: HTMLSpanElement
   private readonly options: CompleteOptionsObj[]
   private readonly attrs: ReqCompleteAttrs
-  private readonly classes
   private readonly props: { placeholder: string }
+  private readonly events: CompleteEventsList = { select: [] }
+  private readonly classes
 
   private activeHint = { index: -1, value: '' }
   private isSelected = false
   private isInitialized = false
+  private isMoving = false
 
   private readonly defaultOptions: ReqCompleteAttrs = {
+    suggestions: [],
     limit: 30,
     baseClass: 'nb_autocomplete',
-    selectFirstOnBlur: true,
+    selectFirstOnBlur: false,
     useHelperText: true,
     qtyDisplayHints: 10,
+    isAdaptiveField: false,
+    onSelect: undefined,
   }
 
-  constructor(
-    input: HTMLInputElement,
-    data: ListOfCompleteData,
-    options?: CompleteAttrs,
-    initialize = false,
-  ) {
-    this.attrs = this.mergeOptions(options)
-    this.options = this.sortOptions(data)
+  constructor(input: HTMLInputElement, attrs: CompleteAttrs, initialize = false) {
+    this.attrs = this.mergeOptions(attrs)
+    this.options = this.sortOptions(this.attrs.suggestions)
 
     this.classes = {
       wrapper: this.attrs.baseClass,
@@ -86,6 +139,9 @@ class NbAutocomplete {
     this.hints = this.renderHints()
     this.helper = this.renderHelper()
 
+    if (this.attrs?.onSelect)
+      this.events.select.push(this.attrs.onSelect)
+
     if (initialize) this.init()
   }
 
@@ -93,15 +149,31 @@ class NbAutocomplete {
     if (this.isInitialized)
       throw new Error('Невозможно повторно инициализировать плагин!')
 
-    this.render()
-    this.events()
+    this.doRender()
+    this.doEvents()
 
     this.isInitialized = true
   }
 
-  /* ======== Private methods ======== */
+  /*
+   * ======== Handlers ========
+   */
 
-  private render() {
+  public onSelect(callback: (value: string) => void) {
+    this.events.select.push(callback)
+  }
+
+  public updateSuggestions(suggestions: ListOfCompleteData) {
+    this.options.splice(0)
+    this.options.push(...this.sortOptions(suggestions))
+    this.updateHints(false)
+  }
+
+  /*
+   * ======== Methods ========
+   */
+
+  private doRender() {
     const parent = this.input.parentElement!
     const wrapper = document.createElement('div')
 
@@ -113,23 +185,27 @@ class NbAutocomplete {
 
     this.input.after(this.hints)
 
-    setStyle(this.hints, {
-      'max-height': `${(32.8 * this.attrs.qtyDisplayHints) + 2}px`,
-    })
+    const border = 2
+    const qtyHints = this.attrs.qtyDisplayHints
+    const hintHeight = getHeightForced(this.hints) - border
+    const itemHeight = round(hintHeight / 24)
+    const visibleHeight = (itemHeight * qtyHints) + border
+
+    DomUtils.css(this.hints, { maxHeight: `${visibleHeight}px` })
 
     if (this.attrs.useHelperText)
       wrapper.append(this.helper)
   }
 
-  private events() {
-    this.input.addEventListener('focus', this.onInputFocus.bind(this))
-    this.input.addEventListener('blur', this.onInputBlur.bind(this))
-    this.input.addEventListener('input', this.onInputText.bind(this))
-    this.input.addEventListener('keydown', this.onInputKeyDown.bind(this))
+  private doEvents() {
+    this.input.addEventListener('focus', this.onFieldFocus.bind(this))
+    this.input.addEventListener('blur', this.onFieldBlur.bind(this))
+    this.input.addEventListener('input', this.onFieldInput.bind(this))
+    this.input.addEventListener('keydown', this.onFieldPress.bind(this))
 
     this.hints.addEventListener('click', this.onHintClick.bind(this))
     this.hints.addEventListener('mouseover', this.onHintOver.bind(this))
-    this.hints.addEventListener('mouseout', this.onHintOut.bind(this))
+    this.hints.addEventListener('mousemove', this.onHintMove.bind(this))
 
     document.addEventListener('click', this.onGlobalClick.bind(this))
   }
@@ -138,7 +214,7 @@ class NbAutocomplete {
     const hints = document.createElement('ul')
 
     hints.classList.add(this.classes.hints)
-    hints.style.setProperty('display', 'none')
+    DomUtils.css(hints, { display: 'none' })
     hints.append(...this.buildHints())
 
     return hints
@@ -150,12 +226,15 @@ class NbAutocomplete {
     const span2 = document.createElement('span')
 
     div.classList.add(this.classes.float)
-    setStyle(div, { 'display': 'none' })
+    DomUtils.css(div, { display: 'none' })
     div.append(span1, span2)
 
     return div
   }
 
+  /**
+   * Обновить список подсказок
+   */
   private updateHints(show = true) {
     const list = this.filterHintItems()
     const out = this.buildHints(list)
@@ -187,25 +266,24 @@ class NbAutocomplete {
     return slice.map(renderItem)
   }
 
-  private completeValueHint(i = 0, whenOne = true) {
-    if (!this.attrs.selectFirstOnBlur) return
+  private selectHintValue(i = 0) {
+    i = i === -1 ? 0 : i
 
-    const items = this.getHintItems()
-    const label = items[i]?.innerText || ''
-    const value = items[i]?.dataset?.['value'] || label
+    const label = this.getHintData(i, 'label')
+    const value = this.getHintData(i, 'value')
 
-    if (!(label && (whenOne ? items.length === 1 : true)))
-      return
-
+    if (!label || !value) return
     this.input.value = label
-    this.setHintsVisible(false)
-    this.setPlaceholder()
-    this.hideHelperText()
+
+    this.toHideHintsBox()
+    this.updateHints(false)
+
     this.input.blur()
     this.isSelected = true
 
-    if (this.attrs?.onSelect !== undefined)
-      this.attrs.onSelect(value)
+    this.events.select.forEach((callback) => {
+      callback(value)
+    })
   }
 
   private showHelperText(i: number) {
@@ -216,7 +294,7 @@ class NbAutocomplete {
     parts[0]!.innerText = text.slice(0, qty)
     parts[1]!.innerText = text.slice(qty)
 
-    this.helper.style.setProperty('display', 'block')
+    DomUtils.css(this.helper, { display: 'block' })
   }
 
   private hideHelperText() {
@@ -224,7 +302,7 @@ class NbAutocomplete {
       it.innerText = ''
     })
 
-    this.helper.style.setProperty('display', 'none')
+    DomUtils.css(this.helper, { display: 'none' })
   }
 
   private moveByHintItems(isDown: boolean) {
@@ -236,38 +314,29 @@ class NbAutocomplete {
       : this.activeHint.index + (isDown ? 1 : -1)
 
     const safe = ((): number => {
-      if (next >= count)
-        return 0
-      else if (next < 0)
-        return count - 1
-      else
-        return next
+      if (next >= count) return 0
+      else if (next < 0) return count - 1
+      else return next
     })()
 
     const activeText = list?.[safe]?.innerText
 
     this.setActiveHint(safe)
-    this.setPlaceholder(activeText)
+    this.setPlaceholder(activeText || null)
 
-    if (this.input.value)
-      this.showHelperText(safe)
+    if (this.input.value) this.showHelperText(safe)
+    if (count <= this.attrs.qtyDisplayHints) return
 
-    if (count <= this.attrs.qtyDisplayHints)
-      return
-
-    const hintHeight = getHeight(this.hints) - 2
-    const itemHeight = getHeight(this.getHintItem(0))
+    const hintHeight = DomUtils.height(this.hints) - 2
+    const itemHeight = DomUtils.height(this.getHintItem(0))
     const progress = round(itemHeight * safe)
     const scroll = this.hints.scrollTop
-    const after = scroll + hintHeight
+    const after = scroll + hintHeight - itemHeight
     const isVisible = progress >= scroll && progress < after
 
-    console.clear()
-    console.log('scroll', scroll)
-    console.log('progress', progress)
-    console.log('after', after)
-
     if (isVisible) return
+
+    this.isMoving = true
 
     if (!isDown)
       this.hints.scrollTo(0, safe * itemHeight)
@@ -277,32 +346,11 @@ class NbAutocomplete {
     }
   }
 
-  /** @deprecated */
-  private changeActiveHintsPage(index: number, isDown: boolean) {
-    // const itemHeight = getHeight(this.getHintItem(0))
-    // const offsetHeight = getHeight(this.hints)
-    const innerHeight = this.hints.clientHeight
-    const nextPage = Math.ceil((index + 1) / this.attrs.qtyDisplayHints)
-    const nextScroll = innerHeight * nextPage - innerHeight
-
-    this.hints.scrollTo(0, nextScroll)
-
-    // const canTogglePage = innerHeight * nextPage < itemHeight * this.getCountHints()
-    // if (isDown) {
-    // 	if (canTogglePage)
-    // 		this.hints.scrollTo(0, nextScroll)
-    // 	else
-    // 		this.hints.scrollBy(0, itemHeight)
-    // } else {
-    // 	this.hints.scrollTo(0, nextScroll)
-    // }
-  }
-
   private setActiveHint(index = -1) {
     const item = this.getHintItem(index)
-    const value = item?.dataset?.['value'] || ''
+    const value = item?.dataset?.['value'] ?? ''
 
-    this.getHintItems().forEach(it => {
+    this.getHintItems().forEach((it) => {
       it.classList.remove('active')
     })
 
@@ -310,35 +358,54 @@ class NbAutocomplete {
     item?.classList.add('active')
   }
 
-  /* ======== Events ======== */
+  private toHideHintsBox() {
+    this.setHintsVisible(false)
+    this.setActiveHint(-1)
+    this.setPlaceholder(null)
+    this.hideHelperText()
+  }
 
-  private onInputFocus() {
-    if (this.getCountHints() < 2) return
+  private selectFirstHint() {
+    if (!this.attrs.selectFirstOnBlur
+      || this.getCountHints() > 1) return
+
+    this.input.value = this.getHintData(0, 'label')
+    this.isSelected = true
+  }
+
+  /*
+   * ======== Events ========
+   */
+
+  private onFieldFocus() {
+    if (this.getCountHints() < 1 || this.isSelected)
+      return
+
     this.setHintsVisible(true)
   }
 
-  private onInputBlur() {
-    this.completeValueHint()
-    this.hideHelperText()
-    this.setPlaceholder()
+  private onFieldBlur() {
+    this.selectFirstHint()
 
     setTimeout(() => {
-      this.setHintsVisible(false)
-      this.setActiveHint()
+      this.toHideHintsBox()
     }, 150)
   }
 
-  private onInputKeyDown(e: KeyboardEvent) {
-    const usingKeys = ['ArrowRight', 'Enter', 'ArrowDown', 'ArrowUp']
+  private onFieldPress(e: KeyboardEvent) {
+    const usingKeys = ['ArrowRight', 'Enter', 'ArrowDown', 'ArrowUp', 'Escape']
 
     if (!usingKeys.includes(e.code)) return
     if (this.isSelected) return
 
     switch (e.code) {
+      // @ts-ignore
       case 'ArrowRight':
+        const { selectionStart, value } = this.input
+        if (selectionStart !== value.length) break
       case 'Enter':
         const index = this.activeHint.index
-        this.completeValueHint(index, false)
+        this.selectHintValue(index)
         break
       case 'ArrowDown':
       case 'ArrowUp':
@@ -346,10 +413,13 @@ class NbAutocomplete {
         const isDown = e.code === 'ArrowDown'
         this.moveByHintItems(isDown)
         break
+      case 'Escape':
+        this.toHideHintsBox()
+        break
     }
   }
 
-  private onInputText() {
+  private onFieldInput() {
     this.updateHints()
     this.hideHelperText()
 
@@ -361,26 +431,24 @@ class NbAutocomplete {
     if (e.target === this.hints)
       return
 
-    this.input.value = (e.target as HTMLLIElement).innerText
-    this.isSelected = true
-
-    this.setHintsVisible(false)
-    this.updateHints(false)
+    const index = this.getHintIndex(e.target)
+    this.selectHintValue(index)
   }
 
   private onHintOver(e: Event) {
-    if (this.hints === e.target) return
-    const li = e.target as HTMLLIElement
+    if (this.hints === e.target || this.isMoving)
+      return
 
-    this.setActiveHint(+(li?.dataset?.['index'] || -1))
+    const li = e.target as HTMLLIElement
+    const index = this.getHintIndex(li)
+
+    this.setActiveHint(index)
     this.setPlaceholder(li.innerText || this.props.placeholder)
   }
 
-  private onHintOut(e: Event) {
-    if (this.hints === e.target)
-      return
-
-    // this.setPlaceholder()
+  private onHintMove() {
+    if (!this.isMoving) return
+    this.isMoving = false
   }
 
   private onGlobalClick(e: Event) {
@@ -389,15 +457,15 @@ class NbAutocomplete {
     const isHints = e.composedPath().includes(this.hints)
     const isInput = e.target === this.input
 
-    if (isHints || isInput)
-      return
+    if (isHints || isInput) return
 
-    this.setHintsVisible(false)
-    this.setActiveHint()
-    this.setPlaceholder()
+    this.selectFirstHint()
+    this.toHideHintsBox()
   }
 
-  /* ======== Helpers ======== */
+  /*
+   * ======== Helpers ========
+   */
 
   private getHintItems() {
     return [...this.hints.querySelectorAll('li')]
@@ -412,16 +480,33 @@ class NbAutocomplete {
   }
 
   private setHintsVisible(s: boolean) {
-    this.hints.style.setProperty('display', s ? 'block' : 'none')
+    DomUtils.css(this.hints, { display: s ? 'block' : 'none' })
     this.hints.scrollTo(0, 0)
   }
 
-  private setPlaceholder(text?: string) {
+  private setPlaceholder(text: string | null) {
     const k = 'placeholder'
     this.input.setAttribute(k, text || this.props[k])
   }
 
-  /* ======== Utils ======== */
+  private getHintIndex(el?: HTMLLIElement | EventTarget | null) {
+    return +((el as HTMLElement)?.dataset?.['index'] ?? -1)
+  }
+
+  private getHintData(index: number, key: 'value' | 'label') {
+    const el = this.getHintItem(index)
+
+    switch (key) {
+      case 'label':
+        return el?.innerText ?? ''
+      case 'value':
+        return el?.dataset?.[key] ?? ''
+    }
+  }
+
+  /*
+   * ======== Utils ========
+   */
 
   private filterHintItems() {
     const value = this.input.value.toLowerCase()
@@ -432,17 +517,17 @@ class NbAutocomplete {
   }
 
   private mergeOptions(options?: CompleteAttrs): ReqCompleteAttrs {
-    if (!options) return this.defaultOptions
-    const def = this.defaultOptions
+    if (!options || !Object.keys(options).length)
+      return this.defaultOptions
 
-    return {
-      limit: options?.limit || def.limit,
-      baseClass: options?.baseClass || def.baseClass,
-      selectFirstOnBlur: options?.selectFirstOnBlur || def.selectFirstOnBlur,
-      useHelperText: options?.useHelperText || def.useHelperText,
-      qtyDisplayHints: options?.qtyDisplayHints || def.qtyDisplayHints,
-      onSelect: options?.onSelect,
+    function merge<T extends Object>(obj: Partial<T>, def: T) {
+      return (Object.keys(def) as (keyof T)[]).reduce<T>((acc, k) => {
+        acc[k] = k in obj ? obj[k]! : def[k]!
+        return acc
+      }, {} as T)
     }
+
+    return merge(options, this.defaultOptions)
   }
 
   private sortOptions(list: ListOfCompleteData): CompleteOptionsObj[] {
@@ -460,4 +545,4 @@ class NbAutocomplete {
   }
 }
 
-export default NbAutocomplete
+export default Autocomplete
