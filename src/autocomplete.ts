@@ -110,6 +110,7 @@ type ReqCompleteAttrs = Required<Omit<CompleteAttrs, 'onSelect'>> & MaybeComplet
 
 type EnumCompleteEvents = 'select'
 type CompleteEventsList = Record<EnumCompleteEvents, ((value: string) => void)[]>
+type CompleteBindKey = { key: string, callback: (ev: KeyboardEvent) => void }
 
 /**
  * @version 1.0.0
@@ -124,6 +125,7 @@ class Autocomplete {
   private readonly props: { placeholder: string }
   private readonly events: CompleteEventsList = { select: [] }
   private readonly classes
+  private readonly usingKeys: CompleteBindKey[] = []
 
   private activeHint = { index: -1, value: '' }
   private isSelected = false
@@ -188,6 +190,10 @@ class Autocomplete {
     this.options.splice(0)
     this.options.push(...this.sortOptions(suggestions))
     this.updateHints(false)
+  }
+
+  public bindKeyPress(keyCode: string, callback: CompleteBindKey['callback']) {
+    this.usingKeys.push({ key: keyCode, callback })
   }
 
   /*
@@ -429,9 +435,11 @@ class Autocomplete {
   }
 
   private onFieldPress(e: KeyboardEvent) {
-    const usingKeys = ['ArrowRight', 'Enter', 'ArrowDown', 'ArrowUp', 'Escape', 'Space']
+    const usingKeys = [
+      'ArrowRight', 'Enter', 'ArrowDown', 'ArrowUp', 'Escape', 'Space',
+    ]
 
-    if (!usingKeys.includes(e.code)) return
+    if (![...usingKeys, ...this.usingKeys.map(it => it.key)].includes(e.code)) return
     if (this.isSelected) return
 
     switch (e.code) {
@@ -456,6 +464,15 @@ class Autocomplete {
         if (!e.ctrlKey) return
         this.toShowHintsBox()
         break
+    }
+
+    if (!this.usingKeys.length) return
+
+    for (const { key, callback } of this.usingKeys) {
+      if (e.code === key) {
+        callback(e)
+        break
+      }
     }
   }
 
@@ -615,7 +632,12 @@ function initDemoAutocomplete() {
   }
 
   const input = document.querySelector<HTMLInputElement>('#input')
-  new Autocomplete(input!, config, true)
+  const cmpl = new Autocomplete(input!, config, true)
+
+  cmpl.bindKeyPress('Digit2', (ev) => {
+    ev.preventDefault()
+    console.log(ev)
+  })
 }
 
 initDemoAutocomplete()
