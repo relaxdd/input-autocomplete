@@ -219,7 +219,7 @@ class Autocomplete {
     const border = 2
     const qtyHints = this.attrs.qtyDisplayHints
     const hintHeight = getHeightForced(this.hints) - border
-    const itemHeight = round(hintHeight / 24)
+    const itemHeight = round(hintHeight / this.getCountHints())
     const visibleHeight = (itemHeight * qtyHints) + border
 
     DomUtils.css(this.hints, { maxHeight: `${visibleHeight}px` })
@@ -615,12 +615,7 @@ function initDemoAutocomplete() {
   }
 
   const input = document.querySelector<HTMLInputElement>('#input')
-  const complete = new Autocomplete(input!, config)
-
-  /*
-   * Инициализировать можно как сразу так и потом когда будет необходимо
-   */
-  complete.init()
+  new Autocomplete(input!, config, true)
 }
 
 initDemoAutocomplete()
