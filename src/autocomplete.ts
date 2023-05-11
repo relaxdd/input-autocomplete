@@ -51,7 +51,6 @@ function getTextWidth(str: string, css?: Record<string, string>) {
   div.innerText = str
   document.body.append(div)
   const { width } = div.getBoundingClientRect()
-  // console.log(div)
   div.remove()
   return width ?? 0
 }
@@ -89,17 +88,21 @@ class DomUtils {
 type DataKeys = 'value' | 'label'
 type CompleteOptionsObj = Record<DataKeys, string>
 type ItemCompleteData = string | CompleteOptionsObj
-type ListOfCompleteData = ItemCompleteData[]
+export type ListOfCompleteData = ItemCompleteData[]
 
 type MaybeCompleteAttrs = {
   /** Событие выбора подсказки */
   onSelect?: ((value: string) => void) | undefined
   /** Минимальная ширина поля ввода */
   minFieldWidth?: string | undefined
+  /** Дополнительные пропсы для поля ввода */
+  fieldProps?: Record<string, string> | undefined
 }
 
 export type CompleteAttrs = {
   suggestions: ListOfCompleteData
+  /** Сортировать подсказки? */
+  isSortHints?: boolean,
   /** Лимит вывода подсказок в боксе, поставьте -1 для отключения лимита */
   limit?: number,
   /** Базовый класс элементов плагина */
@@ -112,6 +115,8 @@ export type CompleteAttrs = {
   qtyDisplayHints?: number,
   /** Подстраивать размер поля ввода под текст? */
   isAdaptiveField?: boolean
+  /** Строгий режим */
+  isStrictMode?: boolean,
 } & MaybeCompleteAttrs
 
 type ReqCompleteAttrs = Required<Omit<CompleteAttrs, 'onSelect'>> & MaybeCompleteAttrs
@@ -119,9 +124,10 @@ type ReqCompleteAttrs = Required<Omit<CompleteAttrs, 'onSelect'>> & MaybeComplet
 type EnumCompleteEvents = 'select'
 type CompleteEventsList = Record<EnumCompleteEvents, ((value: string) => void)[]>
 type CompleteBindKey = { key: string, callback: (ev: KeyboardEvent) => void }
+type CompleteProps = Record<string, string> & { placeholder: string }
 
 /**
- * @version 1.0.1
+ * @version 1.0.3
  * @author awenn2015
  */
 class Autocomplete {
@@ -130,12 +136,13 @@ class Autocomplete {
   private readonly helper: HTMLSpanElement
   private readonly options: CompleteOptionsObj[]
   private readonly attrs: ReqCompleteAttrs
-  private readonly props: { placeholder: string }
+  private readonly props: CompleteProps
   private readonly events: CompleteEventsList = { select: [] }
   private readonly classes
   private readonly usingKeys: CompleteBindKey[] = []
   private readonly uuid: string
 
+  private selected = ''
   private activeHint = { index: -1, value: '' }
   private isSelected = false
   private isInitialized = false
@@ -143,14 +150,17 @@ class Autocomplete {
 
   private readonly defaultOptions: ReqCompleteAttrs = {
     suggestions: [],
+    isSortHints: true,
     limit: 30,
     baseClass: 'nb_autocomplete',
     selectFirstOnBlur: false,
-    useHelperText: true,
+    useHelperText: false,
     qtyDisplayHints: 10,
     isAdaptiveField: false,
     onSelect: undefined,
     minFieldWidth: undefined,
+    isStrictMode: false,
+    fieldProps: undefined,
   }
 
   constructor(input: HTMLInputElement, attrs: CompleteAttrs, initialize = false) {
@@ -164,9 +174,10 @@ class Autocomplete {
       float: this.attrs.baseClass + '__float',
     }
 
-    this.uuid = this.randomId()
     this.input = input
-    this.props = { placeholder: input?.placeholder || '' }
+
+    this.uuid = this.randomId()
+    this.props = this.mergeFieldProps()
     this.hints = this.renderHints()
     this.helper = this.renderHelper()
 
@@ -176,14 +187,22 @@ class Autocomplete {
     if (initialize) this.init()
   }
 
+  private mergeFieldProps(): CompleteProps {
+    return {
+      placeholder: this.input?.placeholder || '',
+      ...this.attrs.fieldProps,
+    }
+  }
+
   public init() {
     if (this.isInitialized)
       throw new Error('Невозможно повторно инициализировать плагин!')
 
+    if (this.attrs.isStrictMode)
+      this.attrs.selectFirstOnBlur = true
+
     this.doRender()
     this.doEvents()
-
-    // console.log(window.getComputedStyle(this.input)['paddingRight'] || 'Null')
 
     if (this.attrs.isAdaptiveField)
       this.setAdaptiveWidth()
@@ -192,17 +211,25 @@ class Autocomplete {
   }
 
   /*
+   * ======== Getters ========
+   */
+
+  get value() {
+    return this.selected
+  }
+
+  /*
    * ======== Methods ========
    */
 
-  private setAdaptiveWidth(text?: string, def = 36) {
+  private setAdaptiveWidth(text?: string, def = 40) {
     const value = text || this.input.value || this.input.placeholder
     const fonts = DomUtils.style(this.input, ['font'])[0]!
     const width = getTextWidth(value, { font: fonts })
     const style = ['paddingLeft', 'paddingRight', 'borderRightWidth', 'borderLeftWidth']
     const sizes = DomUtils.style(this.input, style)
     const plus = sizes.map(it => it ? parseFloat(it) : 0).reduce((n, it) => n + it, 0)
-    const total = width + (plus || def)
+    const total = width + (plus || def) + 2 // 1px запас на всякий случай
     const minWidth = this.attrs?.minFieldWidth
 
     DomUtils.css(this.input, { width: minWidth && total < parseFloat(minWidth) ? minWidth : `${round(total)}px` })
@@ -229,8 +256,15 @@ class Autocomplete {
 
     DomUtils.css(this.hints, { maxHeight: `${visibleHeight}px` })
 
+    if (this.attrs.fieldProps) {
+      for (const k in this.attrs.fieldProps)
+        this.input.setAttribute(k, this.attrs.fieldProps[k]!)
+    }
+
     if (this.attrs.useHelperText)
       wrapper.append(this.helper)
+
+    this.selectFirstHint(this.attrs.isStrictMode)
   }
 
   private doEvents() {
@@ -315,7 +349,9 @@ class Autocomplete {
     const value = this.getHintData(i, 'value')
 
     if (!label || !value) return
+
     this.input.value = label
+    this.selected = value
 
     this.toHideHintsBox()
     this.updateHints(false)
@@ -323,9 +359,11 @@ class Autocomplete {
     this.input.blur()
     this.isSelected = true
 
-    this.events.select.forEach((callback) => {
-      callback(value)
-    })
+    this.notifySelect()
+  }
+
+  private notifySelect(value?: string) {
+    this.events.select.forEach((cb) => cb(value ?? this.selected))
   }
 
   private showHelperText(i: number) {
@@ -410,12 +448,18 @@ class Autocomplete {
       this.setAdaptiveWidth()
   }
 
-  private selectFirstHint() {
+  private selectFirstHint(force = false) {
     if (!this.attrs.selectFirstOnBlur
-      || this.getCountHints() > 1) return
+      || (force ? false : this.getCountHints() > 1)) return
 
-    this.input.value = this.getHintData(0, 'label')
+    const label = this.getHintData(0, 'label')
+    const value = this.getHintData(0, 'value')
+
+    this.input.value = label
+    this.selected = value
     this.isSelected = true
+
+    this.notifySelect()
   }
 
   /*
@@ -445,7 +489,7 @@ class Autocomplete {
   }
 
   private onFieldBlur() {
-    this.selectFirstHint()
+    this.selectFirstHint(this.attrs.isStrictMode)
 
     setTimeout(() => {
       this.toHideHintsBox()
@@ -498,14 +542,13 @@ class Autocomplete {
     this.updateHints()
     this.hideHelperText()
 
+    this.selected = ''
     this.isSelected = false
     this.activeHint = { index: -1, value: '' }
   }
 
   private onHintClick(e: Event) {
-    if (e.target === this.hints)
-      return
-
+    if (e.target === this.hints) return
     const index = this.getHintIndex(e.target)
     this.selectHintValue(index)
   }
@@ -537,7 +580,7 @@ class Autocomplete {
     if ([isHints, isInput, isSimilar].some(Boolean))
       return
 
-    this.selectFirstHint()
+    this.selectFirstHint(this.attrs.isStrictMode)
     this.toHideHintsBox()
   }
 
@@ -623,7 +666,7 @@ class Autocomplete {
     }
 
     const data = list.map(oneView).reduce<CompleteOptionsObj[]>(uniqList, [])
-    return data.sort((a, b) => a.label.localeCompare(b.label))
+    return this.attrs.isSortHints ? data.sort((a, b) => a.label.localeCompare(b.label)) : data
   }
 }
 
