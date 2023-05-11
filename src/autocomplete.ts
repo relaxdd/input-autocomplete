@@ -41,13 +41,17 @@ function getHeightForced(el: HTMLElement) {
   return height
 }
 
-function getTextWidth(str: string) {
+function getTextWidth(str: string, css?: Record<string, string>) {
+  const build = (k: string) => css![k] ? `${DomUtils.format(k)}:${css![k]}` : ''
+  const style = css !== undefined ? Object.keys(css).map(build).join('') : ''
+
   const div = document.createElement('div')
-  div.style.cssText = 'position:fixed;top:0;left:0;overflow:auto;visibility:hidden;' +
-    'pointer-events:none;height:unset;max-height:unset;width:unset;max-width:unset;white-space: nowrap;'
+  div.style.cssText = 'position:fixed;top:0;left:0;overflow:auto;visibility:hidden;pointer-events:none;' +
+    'height:unset;max-height:unset;width:unset;max-width:unset;white-space:nowrap;' + style
   div.innerText = str
   document.body.append(div)
   const { width } = div.getBoundingClientRect()
+  // console.log(div)
   div.remove()
   return width ?? 0
 }
@@ -74,7 +78,7 @@ class DomUtils {
   }
 
   /** Форматирование название css свойств */
-  private static format(str: string) {
+  public static format(str: string) {
     const f = (m: string) => '-' + m.toLowerCase()
     return trim(str.replace(/[A-Z]/g, f), '-')
   }
@@ -90,6 +94,8 @@ type ListOfCompleteData = ItemCompleteData[]
 type MaybeCompleteAttrs = {
   /** Событие выбора подсказки */
   onSelect?: ((value: string) => void) | undefined
+  /** Минимальная ширина поля ввода */
+  minFieldWidth?: string | undefined
 }
 
 export type CompleteAttrs = {
@@ -115,7 +121,7 @@ type CompleteEventsList = Record<EnumCompleteEvents, ((value: string) => void)[]
 type CompleteBindKey = { key: string, callback: (ev: KeyboardEvent) => void }
 
 /**
- * @version 1.0.0
+ * @version 1.0.1
  * @author awenn2015
  */
 class Autocomplete {
@@ -128,6 +134,7 @@ class Autocomplete {
   private readonly events: CompleteEventsList = { select: [] }
   private readonly classes
   private readonly usingKeys: CompleteBindKey[] = []
+  private readonly uuid: string
 
   private activeHint = { index: -1, value: '' }
   private isSelected = false
@@ -143,6 +150,7 @@ class Autocomplete {
     qtyDisplayHints: 10,
     isAdaptiveField: false,
     onSelect: undefined,
+    minFieldWidth: undefined,
   }
 
   constructor(input: HTMLInputElement, attrs: CompleteAttrs, initialize = false) {
@@ -156,6 +164,7 @@ class Autocomplete {
       float: this.attrs.baseClass + '__float',
     }
 
+    this.uuid = this.randomId()
     this.input = input
     this.props = { placeholder: input?.placeholder || '' }
     this.hints = this.renderHints()
@@ -174,6 +183,8 @@ class Autocomplete {
     this.doRender()
     this.doEvents()
 
+    // console.log(window.getComputedStyle(this.input)['paddingRight'] || 'Null')
+
     if (this.attrs.isAdaptiveField)
       this.setAdaptiveWidth()
 
@@ -181,35 +192,20 @@ class Autocomplete {
   }
 
   /*
-   * ======== Handlers ========
-   */
-
-  public onSelect(callback: (value: string) => void) {
-    this.events.select.push(callback)
-  }
-
-  public updateSuggestions(suggestions: ListOfCompleteData) {
-    this.options.splice(0)
-    this.options.push(...this.sortOptions(suggestions))
-    this.updateHints(false)
-  }
-
-  public bindKeyPress(keyCode: string, callback: CompleteBindKey['callback']) {
-    this.usingKeys.push({ key: keyCode, callback })
-  }
-
-  /*
    * ======== Methods ========
    */
 
-  private setAdaptiveWidth(text?: string) {
+  private setAdaptiveWidth(text?: string, def = 36) {
     const value = text || this.input.value || this.input.placeholder
-    const width = getTextWidth(value) + 4
-    const padding = DomUtils.style(this.input, ['paddingLeft', 'paddingRight'])
-    const vertical = padding.map(it => parseFloat(it)).reduce((n, it) => n + it, 0)
-    const total = width + vertical
+    const fonts = DomUtils.style(this.input, ['font'])[0]!
+    const width = getTextWidth(value, { font: fonts })
+    const style = ['paddingLeft', 'paddingRight', 'borderRightWidth', 'borderLeftWidth']
+    const sizes = DomUtils.style(this.input, style)
+    const plus = sizes.map(it => it ? parseFloat(it) : 0).reduce((n, it) => n + it, 0)
+    const total = width + (plus || def)
+    const minWidth = this.attrs?.minFieldWidth
 
-    DomUtils.css(this.input, { maxWidth: `${round(total)}px` })
+    DomUtils.css(this.input, { width: minWidth && total < parseFloat(minWidth) ? minWidth : `${round(total)}px` })
   }
 
   private doRender() {
@@ -217,6 +213,7 @@ class Autocomplete {
     const wrapper = document.createElement('div')
 
     this.input.classList.add(this.classes.field)
+    this.input.setAttribute('data-uuid', this.uuid)
     wrapper.classList.add(this.classes.wrapper)
 
     wrapper.append(this.input)
@@ -253,6 +250,7 @@ class Autocomplete {
     const hints = document.createElement('ul')
 
     hints.classList.add(this.classes.hints)
+    hints.setAttribute('data-uuid', this.uuid)
     DomUtils.css(hints, { display: 'none' })
     hints.append(...this.buildHints())
 
@@ -421,6 +419,24 @@ class Autocomplete {
   }
 
   /*
+   * ======== Handlers ========
+   */
+
+  public onSelect(callback: (value: string) => void) {
+    this.events.select.push(callback)
+  }
+
+  public updateSuggestions(suggestions: ListOfCompleteData) {
+    this.options.splice(0)
+    this.options.push(...this.sortOptions(suggestions))
+    this.updateHints(false)
+  }
+
+  public bindKeyPress(keyCode: string, callback: CompleteBindKey['callback']) {
+    this.usingKeys.push({ key: keyCode, callback })
+  }
+
+  /*
    * ======== Events ========
    */
 
@@ -515,8 +531,11 @@ class Autocomplete {
 
     const isHints = e.composedPath().includes(this.hints)
     const isInput = e.target === this.input
+    const othersList = [...document.querySelectorAll(`.${this.classes.field}`)]
+    const isSimilar = othersList.some((it) => it === this.input)
 
-    if (isHints || isInput) return
+    if ([isHints, isInput, isSimilar].some(Boolean))
+      return
 
     this.selectFirstHint()
     this.toHideHintsBox()
@@ -568,7 +587,7 @@ class Autocomplete {
    */
 
   private randomId() {
-    Math.floor(Math.random() * Date.now()).toString(36)
+    return Math.floor(Math.random() * Date.now()).toString(36)
   }
 
   private filterHintItems() {
@@ -607,6 +626,8 @@ class Autocomplete {
     return data.sort((a, b) => a.label.localeCompare(b.label))
   }
 }
+
+export default Autocomplete
 
 /* ======== Demo initialize plugin  ======== */
 
