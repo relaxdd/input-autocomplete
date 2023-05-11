@@ -65,6 +65,7 @@ class DomUtils {
     return round(el?.getBoundingClientRect().height || 0)
   }
 
+  /** Получить computedStyle элемента */
   public static style(el: HTMLElement, names: string[]) {
     return names.map(it => {
       const name = DomUtils.format(it)
@@ -72,6 +73,7 @@ class DomUtils {
     })
   }
 
+  /** Форматирование название css свойств */
   private static format(str: string) {
     const f = (m: string) => '-' + m.toLowerCase()
     return trim(str.replace(/[A-Z]/g, f), '-')
@@ -612,7 +614,7 @@ function initDemoAutocomplete() {
   const data = [
     'Москва', 'Санкт-Петербург', 'Астана', 'Новосибирск', 'Екатеринбург', 'Казань', 'Мурманск', 'Нижний Новгород',
     'Ижевск', 'Красноярск', 'Челябинск', 'Чебоксары', 'Набережные Челны', 'Омск', 'Иркутск', 'Самара', 'Тюмень',
-    'Уфа', 'Ульяновск', 'Владимир', 'Суздаль', 'Алматы', 'Киров', 'Вологда', 'Барнаул', 'Урюпинск',
+    'Уфа', 'Ульяновск', 'Владимир', 'Суздаль', 'Алматы', 'Киров', 'Вологда', 'Барнаул', 'Урюпинск', 'Дзержинск'
   ]
 
   /*
@@ -634,10 +636,16 @@ function initDemoAutocomplete() {
   const input = document.querySelector<HTMLInputElement>('#input')
   const cmpl = new Autocomplete(input!, config, true)
 
-  cmpl.bindKeyPress('Digit2', (ev) => {
-    ev.preventDefault()
-    console.log(ev)
-  })
+  // cmpl.init()
+
+  // cmpl.bindKeyPress('Digit2', (ev) => {
+  //   ev.preventDefault()
+  //   console.log(ev)
+  // })
+
+  // cmpl.onSelect((value) => {
+  //   console.log(value)
+  // })
 }
 
 initDemoAutocomplete()
