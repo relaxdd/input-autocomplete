@@ -10,7 +10,7 @@ type MaybeCompleteAttrs = {
   /** Минимальная ширина поля ввода */
   minFieldWidth?: string | undefined
   /** Дополнительные пропсы для поля ввода */
-  fieldProps?: Record<string, string> | undefined
+  inputFieldProps?: Record<string, string> | undefined
 }
 
 export type CompleteAttrs = {
@@ -18,7 +18,7 @@ export type CompleteAttrs = {
   /** Сортировать подсказки? */
   isSortHints?: boolean,
   /** Лимит вывода подсказок в боксе, поставьте -1 для отключения лимита */
-  limit?: number,
+  hintsLimit?: number,
   /** Базовый класс элементов плагина */
   baseClass?: string,
   /** Авто выбор первого элемента при скрытии globalClick / blur */

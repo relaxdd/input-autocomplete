@@ -12,7 +12,7 @@ import DomUtils from "./DomUtils";
 import { getHeightForced, getTextWidth, round } from "../includes/utils";
 
 /**
- * @version 1.0.3
+ * @version 1.0.4
  * @author awenn2015
  */
 class Autocomplete {
@@ -36,7 +36,7 @@ class Autocomplete {
   private readonly defaultOptions: ReqCompleteAttrs = {
     suggestions: [],
     isSortHints: true,
-    limit: 30,
+    hintsLimit: 30,
     baseClass: 'nb_autocomplete',
     selectFirstOnBlur: false,
     useHelperText: false,
@@ -45,7 +45,7 @@ class Autocomplete {
     onSelect: undefined,
     minFieldWidth: undefined,
     isStrictMode: false,
-    fieldProps: undefined,
+    inputFieldProps: undefined,
     showHintsAfterSelect: true
   }
 
@@ -76,7 +76,7 @@ class Autocomplete {
   private mergeFieldProps(): CompleteProps {
     return {
       placeholder: this.input?.placeholder || '',
-      ...this.attrs.fieldProps,
+      ...this.attrs.inputFieldProps,
     }
   }
 
@@ -98,11 +98,21 @@ class Autocomplete {
    * ======== Getters ========
    */
 
+  /** Выбранная подсказка */
   get value() {
     return this.selected
   }
 
   set value(value: string) {
+  }
+
+  /** Значение в поле ввода */
+  get label() {
+    return this.input.value
+  }
+
+  set label(value: string) {
+    this.input.value = value
   }
 
   /*
@@ -112,7 +122,7 @@ class Autocomplete {
   private setAdaptiveWidth(text?: string, def = 40) {
     if (!this.attrs.isAdaptiveField) return
 
-    const value = text || this.input.value || this.input.placeholder
+    const value = text || this.label || this.input.placeholder
     const fonts = DomUtils.style(this.input, ['font'])[0]!
     const width = getTextWidth(value, { font: fonts })
     const style = ['paddingLeft', 'paddingRight', 'borderRightWidth', 'borderLeftWidth']
@@ -145,9 +155,9 @@ class Autocomplete {
 
     DomUtils.css(this.hints, { maxHeight: `${visibleHeight}px` })
 
-    if (this.attrs.fieldProps) {
-      for (const k in this.attrs.fieldProps)
-        this.input.setAttribute(k, this.attrs.fieldProps[k]!)
+    if (this.attrs.inputFieldProps) {
+      for (const k in this.attrs.inputFieldProps)
+        this.input.setAttribute(k, this.attrs.inputFieldProps[k]!)
     }
 
     if (this.attrs.useHelperText)
@@ -209,8 +219,8 @@ class Autocomplete {
   private buildHints(options?: CompleteOptionsObj[]): HTMLLIElement[] {
     options = options || this.options
 
-    const slice = this.attrs.limit !== -1
-      ? options.slice(0, this.attrs.limit)
+    const slice = this.attrs.hintsLimit !== -1
+      ? options.slice(0, this.attrs.hintsLimit)
       : options
 
     const renderItem = (it: CompleteOptionsObj, i: number) => {
@@ -242,7 +252,7 @@ class Autocomplete {
 
     if (!label || !value) return
 
-    this.input.value = label
+    this.label = label
     this.selected = value
 
     this.toHideHintsBox()
@@ -259,7 +269,7 @@ class Autocomplete {
   }
 
   private showHelperText(i: number) {
-    const qty = this.input.value.length
+    const qty = this.label.length
     const text = this.getHintItem(i)?.innerText || ''
     const parts = this.helper.querySelectorAll('span')
 
@@ -299,7 +309,7 @@ class Autocomplete {
     this.setActiveHint(safe)
     this.setPlaceholder(activeText || null)
 
-    if (this.input.value) this.showHelperText(safe)
+    if (this.label) this.showHelperText(safe)
     if (count <= this.attrs.qtyDisplayHints) return
 
     const hintHeight = DomUtils.height(this.hints) - 2
@@ -344,14 +354,30 @@ class Autocomplete {
     this.setAdaptiveWidth()
   }
 
+  /* TODO: Доработать поиск совпадений */
+  private findHintMatch() {
+    if (!this.getCountHints())
+      return this.options[0]!
+
+    if (this.label.length) {
+      // this.label.slice(0, -1)
+    }
+
+    return this.options[0]!
+  }
+
   private selectFirstHint(force = false) {
     if (!this.attrs.selectFirstOnBlur
       || (force ? false : this.getCountHints() > 1)) return
 
-    const label = this.getHintData(0, 'label')
-    const value = this.getHintData(0, 'value')
+    const { value, label } = (() => {
+      const label = this.getHintData(0, 'label')
+      const value = this.getHintData(0, 'value')
 
-    this.input.value = label
+      return label && value ? { value, label } : this.findHintMatch()
+    })()
+
+    this.label = label
     this.selected = value
     this.isSelected = true
 
@@ -372,7 +398,7 @@ class Autocomplete {
 
     this.isSelected = false
     this.selected = ''
-    this.input.value = ''
+    this.label = ''
     this.activeHint = { index: -1, value: '' }
 
     this.updateHints(false)
@@ -522,9 +548,9 @@ class Autocomplete {
 
     switch (key) {
       case 'label':
-        return el?.innerText ?? ''
+        return el?.innerText ?? null
       case 'value':
-        return el?.dataset?.[key] ?? ''
+        return el?.dataset?.[key] ?? null
     }
   }
 
@@ -537,9 +563,7 @@ class Autocomplete {
   }
 
   private filterHintItems() {
-    const value = this.input.value.toLowerCase()
-
-    console.log(value)
+    const value = this.label.toLowerCase()
 
     return this.options.filter((it) => {
       return it.label.toLowerCase().startsWith(value)

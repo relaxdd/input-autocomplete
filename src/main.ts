@@ -17,11 +17,9 @@ function initDemoAutocomplete() {
     isAdaptiveField: false,
     qtyDisplayHints: 8,
     selectFirstOnBlur: true,
-    limit: 30,
+    hintsLimit: 30,
+    isStrictMode: true,
     baseClass: 'nb_autocomplete',
-    onSelect: (value) => {
-      console.log(value)
-    },
   }
 
   const input = document.querySelector<HTMLInputElement>('#input')
