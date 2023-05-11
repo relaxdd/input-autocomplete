@@ -76,7 +76,7 @@ class DomUtils {
     })
   }
 
-  /** Форматирование название css свойств */
+  /** Форматирование названий css свойств */
   public static format(str: string) {
     const f = (m: string) => '-' + m.toLowerCase()
     return trim(str.replace(/[A-Z]/g, f), '-')
@@ -88,6 +88,7 @@ class DomUtils {
 type DataKeys = 'value' | 'label'
 type CompleteOptionsObj = Record<DataKeys, string>
 type ItemCompleteData = string | CompleteOptionsObj
+
 export type ListOfCompleteData = ItemCompleteData[]
 
 type MaybeCompleteAttrs = {
@@ -107,16 +108,18 @@ export type CompleteAttrs = {
   limit?: number,
   /** Базовый класс элементов плагина */
   baseClass?: string,
-  /** Авто выбор первого элемента при скрытии  */
+  /** Авто выбор первого элемента при скрытии globalClick / blur */
   selectFirstOnBlur?: boolean
-  /** Показывать текст подсказку при навигации */
+  /** Показывать текст подсказку при навигации когда введена часть символов */
   useHelperText?: boolean,
-  /** Кол-во видимых подсказок */
+  /** Кол-во видимых подсказок в боксе */
   qtyDisplayHints?: number,
   /** Подстраивать размер поля ввода под текст? */
   isAdaptiveField?: boolean
-  /** Строгий режим */
+  /** Строгий режим, всегда будет выбрано какое-то значение */
   isStrictMode?: boolean,
+  /** Показывать подсказки даже после выбора элемента */
+  showHintsAfterSelect?: boolean
 } & MaybeCompleteAttrs
 
 type ReqCompleteAttrs = Required<Omit<CompleteAttrs, 'onSelect'>> & MaybeCompleteAttrs
@@ -134,7 +137,6 @@ class Autocomplete {
   private readonly input: HTMLInputElement
   private readonly hints: HTMLUListElement
   private readonly helper: HTMLSpanElement
-  private readonly options: CompleteOptionsObj[]
   private readonly attrs: ReqCompleteAttrs
   private readonly props: CompleteProps
   private readonly events: CompleteEventsList = { select: [] }
@@ -142,6 +144,7 @@ class Autocomplete {
   private readonly usingKeys: CompleteBindKey[] = []
   private readonly uuid: string
 
+  private options: CompleteOptionsObj[]
   private selected = ''
   private activeHint = { index: -1, value: '' }
   private isSelected = false
@@ -161,6 +164,7 @@ class Autocomplete {
     minFieldWidth: undefined,
     isStrictMode: false,
     fieldProps: undefined,
+    showHintsAfterSelect: true
   }
 
   constructor(input: HTMLInputElement, attrs: CompleteAttrs, initialize = false) {
@@ -216,6 +220,9 @@ class Autocomplete {
 
   get value() {
     return this.selected
+  }
+
+  set value(value: string) {
   }
 
   /*
@@ -338,7 +345,10 @@ class Autocomplete {
   }
 
   private toShowHintsBox() {
-    if (this.getCountHints() > 0 && !this.isSelected)
+    const isHasHints = this.getCountHints() > 0
+    const showAfterClick = this.attrs.showHintsAfterSelect ? true : !this.isSelected
+
+    if (isHasHints && showAfterClick)
       this.setHintsVisible(true)
   }
 
@@ -385,6 +395,9 @@ class Autocomplete {
     DomUtils.css(this.helper, { display: 'none' })
   }
 
+  /**
+   * Навигация по списку подсказок
+   */
   private moveByHintItems(isDown: boolean) {
     const list = this.getHintItems()
     const count = list.length
@@ -426,6 +439,9 @@ class Autocomplete {
     }
   }
 
+  /**
+   * Установить активный элемент подсказки
+   */
   private setActiveHint(index = -1) {
     const item = this.getHintItem(index)
     const value = item?.dataset?.['value'] ?? ''
@@ -459,6 +475,7 @@ class Autocomplete {
     this.selected = value
     this.isSelected = true
 
+    this.setAdaptiveWidth(label)
     this.notifySelect()
   }
 
@@ -471,9 +488,15 @@ class Autocomplete {
   }
 
   public updateSuggestions(suggestions: ListOfCompleteData) {
-    this.options.splice(0)
-    this.options.push(...this.sortOptions(suggestions))
+    this.options = this.sortOptions(suggestions)
+
+    this.isSelected = false
+    this.selected = ''
+    this.input.value = ''
+    this.activeHint = { index: -1, value: '' }
+
     this.updateHints(false)
+    this.selectFirstHint(true)
   }
 
   public bindKeyPress(keyCode: string, callback: CompleteBindKey['callback']) {
@@ -635,6 +658,8 @@ class Autocomplete {
 
   private filterHintItems() {
     const value = this.input.value.toLowerCase()
+
+    console.log(value)
 
     return this.options.filter((it) => {
       return it.label.toLowerCase().startsWith(value)
