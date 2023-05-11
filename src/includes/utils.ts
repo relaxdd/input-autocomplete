@@ -1,4 +1,4 @@
-import DomUtils from "./DomUtils";
+import DomUtils from "../class/DomUtils";
 
 export function round(n: number, q = 1) {
   return Math.round(n * (10 ** q)) / (10 ** q)

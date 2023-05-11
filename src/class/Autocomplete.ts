@@ -1,4 +1,4 @@
-import {
+import type {
   CompleteAttrs,
   CompleteBindKey,
   CompleteEventsList,
@@ -7,9 +7,9 @@ import {
   ItemCompleteData,
   ListOfCompleteData,
   ReqCompleteAttrs
-} from "./types";
-import DomUtils from "./inc/DomUtils";
-import { getHeightForced, getTextWidth, round } from "./inc/utils";
+} from "../types";
+import DomUtils from "./DomUtils";
+import { getHeightForced, getTextWidth, round } from "../includes/utils";
 
 /**
  * @version 1.0.3

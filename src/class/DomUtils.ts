@@ -1,4 +1,4 @@
-import { round, trim } from "./utils";
+import { round, trim } from "../includes/utils";
 
 class DomUtils {
   public static css(el: HTMLElement, list: Record<string, string>) {

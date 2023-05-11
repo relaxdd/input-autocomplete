@@ -1,5 +1,5 @@
 import { CompleteAttrs } from "./types";
-import Autocomplete from "./autocomplete";
+import Autocomplete from "./class/Autocomplete";
 
 function initDemoAutocomplete() {
   const data = [
