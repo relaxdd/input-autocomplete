@@ -1,133 +1,15 @@
-function round(n: number, q = 1) {
-  return Math.round(n * (10 ** q)) / (10 ** q)
-}
-
-function trim(str: string, char: string) {
-  let whitespace = [
-    ' ', '\n', '\r', '\t', '\f', '\x0b', '\xa0', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004',
-    '\u2005', '\u2006', '\u2007', '\u2008', '\u2009', '\u200a', '\u200b', '\u2028', '\u2029', '\u3000',
-  ].join('')
-  let l = 0
-  let i = 0
-  str += ''
-  if (char) {
-    whitespace = (char + '').replace(/([[\]().?/*{}+$^:])/g, '$1')
-  }
-  l = str.length
-  for (i = 0; i < l; i++) {
-    if (whitespace.indexOf(str.charAt(i)) === -1) {
-      str = str.substring(i)
-      break
-    }
-  }
-  l = str.length
-  for (i = l - 1; i >= 0; i--) {
-    if (whitespace.indexOf(str.charAt(i)) === -1) {
-      str = str.substring(0, i + 1)
-      break
-    }
-  }
-  return whitespace.indexOf(str.charAt(0)) === -1 ? str : ''
-}
-
-function getHeightForced(el: HTMLElement) {
-  const clone = el.cloneNode(true) as HTMLElement
-  const width = el.getBoundingClientRect().width
-  clone.style.cssText = 'position:fixed;top:0;left:0;overflow:auto;visibility:hidden;' +
-    'pointer-events:none;height:unset;max-height:unset;width:' + width + 'px'
-  document.body.append(clone)
-  const height = clone.getBoundingClientRect().height
-  clone.remove()
-  return height
-}
-
-function getTextWidth(str: string, css?: Record<string, string>) {
-  const build = (k: string) => css![k] ? `${DomUtils.format(k)}:${css![k]}` : ''
-  const style = css !== undefined ? Object.keys(css).map(build).join('') : ''
-
-  const div = document.createElement('div')
-  div.style.cssText = 'position:fixed;top:0;left:0;overflow:auto;visibility:hidden;pointer-events:none;' +
-    'height:unset;max-height:unset;width:unset;max-width:unset;white-space:nowrap;' + style
-  div.innerText = str
-  document.body.append(div)
-  const { width } = div.getBoundingClientRect()
-  div.remove()
-  return width ?? 0
-}
-
-/* ========== End utils functions ========== */
-
-class DomUtils {
-  public static css(el: HTMLElement, list: Record<string, string>) {
-    for (const k in list) {
-      el.style.setProperty(DomUtils.format(k), list[k]!)
-    }
-  }
-
-  public static height(el?: HTMLElement) {
-    return round(el?.getBoundingClientRect().height || 0)
-  }
-
-  /** Получить computedStyle элемента */
-  public static style(el: HTMLElement, names: string[]) {
-    return names.map(it => {
-      const name = DomUtils.format(it)
-      return window.getComputedStyle(el).getPropertyValue(name)
-    })
-  }
-
-  /** Форматирование названий css свойств */
-  public static format(str: string) {
-    const f = (m: string) => '-' + m.toLowerCase()
-    return trim(str.replace(/[A-Z]/g, f), '-')
-  }
-}
-
-/* ========== End dom utils class ========== */
-
-type DataKeys = 'value' | 'label'
-type CompleteOptionsObj = Record<DataKeys, string>
-type ItemCompleteData = string | CompleteOptionsObj
-
-export type ListOfCompleteData = ItemCompleteData[]
-
-type MaybeCompleteAttrs = {
-  /** Событие выбора подсказки */
-  onSelect?: ((value: string) => void) | undefined
-  /** Минимальная ширина поля ввода */
-  minFieldWidth?: string | undefined
-  /** Дополнительные пропсы для поля ввода */
-  fieldProps?: Record<string, string> | undefined
-}
-
-export type CompleteAttrs = {
-  suggestions: ListOfCompleteData
-  /** Сортировать подсказки? */
-  isSortHints?: boolean,
-  /** Лимит вывода подсказок в боксе, поставьте -1 для отключения лимита */
-  limit?: number,
-  /** Базовый класс элементов плагина */
-  baseClass?: string,
-  /** Авто выбор первого элемента при скрытии globalClick / blur */
-  selectFirstOnBlur?: boolean
-  /** Показывать текст подсказку при навигации когда введена часть символов */
-  useHelperText?: boolean,
-  /** Кол-во видимых подсказок в боксе */
-  qtyDisplayHints?: number,
-  /** Подстраивать размер поля ввода под текст? */
-  isAdaptiveField?: boolean
-  /** Строгий режим, всегда будет выбрано какое-то значение */
-  isStrictMode?: boolean,
-  /** Показывать подсказки даже после выбора элемента */
-  showHintsAfterSelect?: boolean
-} & MaybeCompleteAttrs
-
-type ReqCompleteAttrs = Required<Omit<CompleteAttrs, 'onSelect'>> & MaybeCompleteAttrs
-
-type EnumCompleteEvents = 'select'
-type CompleteEventsList = Record<EnumCompleteEvents, ((value: string) => void)[]>
-type CompleteBindKey = { key: string, callback: (ev: KeyboardEvent) => void }
-type CompleteProps = Record<string, string> & { placeholder: string }
+import {
+  CompleteAttrs,
+  CompleteBindKey,
+  CompleteEventsList,
+  CompleteOptionsObj,
+  CompleteProps,
+  ItemCompleteData,
+  ListOfCompleteData,
+  ReqCompleteAttrs
+} from "./types";
+import DomUtils from "./inc/DomUtils";
+import { getHeightForced, getTextWidth, round } from "./inc/utils";
 
 /**
  * @version 1.0.3
@@ -168,7 +50,7 @@ class Autocomplete {
   }
 
   constructor(input: HTMLInputElement, attrs: CompleteAttrs, initialize = false) {
-    this.attrs = this.mergeOptions(attrs)
+    this.attrs = this.mergeAttributes(attrs)
     this.options = this.sortOptions(this.attrs.suggestions)
 
     this.classes = {
@@ -207,9 +89,7 @@ class Autocomplete {
 
     this.doRender()
     this.doEvents()
-
-    if (this.attrs.isAdaptiveField)
-      this.setAdaptiveWidth()
+    this.setAdaptiveWidth()
 
     this.isInitialized = true
   }
@@ -230,6 +110,8 @@ class Autocomplete {
    */
 
   private setAdaptiveWidth(text?: string, def = 40) {
+    if (!this.attrs.isAdaptiveField) return
+
     const value = text || this.input.value || this.input.placeholder
     const fonts = DomUtils.style(this.input, ['font'])[0]!
     const width = getTextWidth(value, { font: fonts })
@@ -459,9 +341,7 @@ class Autocomplete {
     this.setActiveHint(-1)
     this.setPlaceholder(null)
     this.hideHelperText()
-
-    if (this.attrs.isAdaptiveField)
-      this.setAdaptiveWidth()
+    this.setAdaptiveWidth()
   }
 
   private selectFirstHint(force = false) {
@@ -666,7 +546,7 @@ class Autocomplete {
     })
   }
 
-  private mergeOptions(options?: CompleteAttrs): ReqCompleteAttrs {
+  private mergeAttributes(options?: CompleteAttrs): ReqCompleteAttrs {
     if (!options || !Object.keys(options).length)
       return this.defaultOptions
 
@@ -696,45 +576,3 @@ class Autocomplete {
 }
 
 export default Autocomplete
-
-/* ======== Demo initialize plugin  ======== */
-
-function initDemoAutocomplete() {
-  const data = [
-    'Москва', 'Санкт-Петербург', 'Астана', 'Новосибирск', 'Екатеринбург', 'Казань', 'Мурманск', 'Нижний Новгород',
-    'Ижевск', 'Красноярск', 'Челябинск', 'Чебоксары', 'Набережные Челны', 'Омск', 'Иркутск', 'Самара', 'Тюмень',
-    'Уфа', 'Ульяновск', 'Владимир', 'Суздаль', 'Алматы', 'Киров', 'Вологда', 'Барнаул', 'Урюпинск', 'Дзержинск'
-  ]
-
-  /*
-   * Параметры автокомплита
-   */
-  const config: CompleteAttrs = {
-    suggestions: data,
-    useHelperText: false,
-    isAdaptiveField: true,
-    qtyDisplayHints: 8,
-    selectFirstOnBlur: true,
-    limit: 30,
-    baseClass: 'nb_autocomplete',
-    onSelect: (value) => {
-      console.log(value)
-    },
-  }
-
-  const input = document.querySelector<HTMLInputElement>('#input')
-  const cmpl = new Autocomplete(input!, config, true)
-
-  // cmpl.init()
-
-  // cmpl.bindKeyPress('Digit2', (ev) => {
-  //   ev.preventDefault()
-  //   console.log(ev)
-  // })
-
-  // cmpl.onSelect((value) => {
-  //   console.log(value)
-  // })
-}
-
-initDemoAutocomplete()

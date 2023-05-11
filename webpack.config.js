@@ -11,7 +11,7 @@ module.exports = function (env, argv) {
   return {
     mode: argv.mode,
     devtool: isProduction ? 'source-map' : 'eval',
-    entry: path.resolve(__dirname, 'src', 'autocomplete.ts'),
+    entry: path.resolve(__dirname, 'src', 'main.ts'),
     watch: isDevelopment,
     watchOptions: {
       aggregateTimeout: 500,
@@ -26,7 +26,7 @@ module.exports = function (env, argv) {
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
-      filename: 'autocomplete.js',
+      filename: 'main.js',
     },
     optimization: {
       minimize: true,

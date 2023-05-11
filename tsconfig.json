@@ -2,7 +2,7 @@
   "compileOnSave": true,
   "compilerOptions": {
     "target": "ES6",
-    "module": "None",
+    "module": "ESNext",
     "rootDir": "./src",
     "isolatedModules": true,
     "esModuleInterop": true,
