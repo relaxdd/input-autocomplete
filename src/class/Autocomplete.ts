@@ -9,10 +9,10 @@ import type {
   ReqCompleteAttrs
 } from "../types";
 import DomUtils from "./DomUtils";
-import { getHeightForced, getTextWidth, round } from "../includes/utils";
+import { getHeightForced, getOffsetBottom, getTextWidth, round } from "../includes/utils";
 
 /**
- * @version 1.0.4
+ * @version 1.0.5
  * @author awenn2015
  */
 class Autocomplete {
@@ -27,19 +27,12 @@ class Autocomplete {
   private readonly uuid: string
   private readonly isStrict: boolean
 
-  private options: CompleteOptionsObj[]
-  private selected = ''
-  private activeHint = { index: -1, value: '' }
-  private isSelected = false
-  private isInitialized = false
-  private isMoving = false
-
-  private readonly defaultOptions: ReqCompleteAttrs = {
+  private readonly defaultAttrs: ReqCompleteAttrs = {
     suggestions: [],
     isSortHints: true,
     hintsLimit: 30,
     baseClass: 'nb_autocomplete',
-    selectFirstOnBlur: false,
+    selectFirstOnBlur: true,
     useHelperText: false,
     qtyDisplayHints: 10,
     isAdaptiveField: false,
@@ -47,8 +40,19 @@ class Autocomplete {
     minFieldWidth: undefined,
     isStrictMode: false,
     inputFieldProps: undefined,
-    showHintsAfterSelect: true
+    showHintsAfterSelect: true,
+    isWithMatchMark: false
   }
+
+  private hintsItemHeight = 0
+  private hintsMaxHeight = 0
+
+  private options: CompleteOptionsObj[]
+  private selected = ''
+  private activeHint = { index: -1, value: '' }
+  private isSelected = false
+  private isInitialized = false
+  private isMoving = false
 
   constructor(input: HTMLInputElement, attrs: CompleteAttrs, initialize = false) {
     this.attrs = this.mergeAttributes(attrs)
@@ -135,7 +139,11 @@ class Autocomplete {
     const total = width + (plus || def) + 2 // 1px запас на всякий случай
     const minWidth = this.attrs?.minFieldWidth
 
-    DomUtils.css(this.input, { width: minWidth && total < parseFloat(minWidth) ? minWidth : `${round(total)}px` })
+    DomUtils.css(this.input, {
+      width: minWidth && total < parseFloat(String(minWidth))
+        ? (typeof minWidth === 'string' ? minWidth : `${minWidth}px`)
+        : `${round(total)}px`
+    })
   }
 
   private doRender() {
@@ -151,13 +159,14 @@ class Autocomplete {
 
     this.input.after(this.hints)
 
-    const border = 2
+    const style = DomUtils.style(this.hints, ['borderTopWidth', 'borderBottomWidth'])
+    const borders = style.map(it => parseFloat(it) || 0).reduce((n, i) => n + i, 0)
+    const hintHeight = getHeightForced(this.hints) - borders
+    const itemHeight = round(hintHeight / this.getCountHints(), 2)
     const qtyHints = this.attrs.qtyDisplayHints
-    const hintHeight = getHeightForced(this.hints) - border
-    const itemHeight = round(hintHeight / this.getCountHints())
-    const visibleHeight = (itemHeight * qtyHints) + border
+    const displayHeight = (itemHeight * qtyHints) + borders
 
-    DomUtils.css(this.hints, { maxHeight: `${visibleHeight}px` })
+    DomUtils.css(this.hints, { maxHeight: `${displayHeight}px` })
 
     if (this.attrs.inputFieldProps) {
       for (const k in this.attrs.inputFieldProps)
@@ -166,6 +175,9 @@ class Autocomplete {
 
     if (this.attrs.useHelperText)
       wrapper.append(this.helper)
+
+    this.hintsItemHeight = itemHeight
+    this.hintsMaxHeight = displayHeight
 
     this.selectFirstHint(this.isStrict)
   }
@@ -226,10 +238,21 @@ class Autocomplete {
       ? options.slice(0, this.attrs.hintsLimit)
       : options
 
+    const useMark = (label: string) => {
+      if (!this.label.length || label === this.label) return label
+
+      const start = label.slice(0, this.label.length)
+      const finish = label.slice(this.label.length)
+
+      return `<mark>${start}</mark><span>${finish}</span>`
+    }
+
     const renderItem = (it: CompleteOptionsObj, i: number) => {
       const li = document.createElement('li')
 
-      li.innerText = it.label
+      li.innerHTML = this.attrs.isWithMatchMark
+        ? useMark(it.label) : it.label
+
       li.setAttribute('data-index', String(i))
       li.setAttribute('data-value', it.value)
 
@@ -239,10 +262,51 @@ class Autocomplete {
     return slice.map(renderItem)
   }
 
+  // FIXME: Захардкоженные значения
+  private doAnalyzeHint() {
+    const border = 2
+    const offset = 5
+
+    const input = this.input.getBoundingClientRect()
+    const height = this.hintsItemHeight * this.attrs.qtyDisplayHints + border
+    const before = input.top + input.height + offset
+    const needHeight = height + before
+
+    const changePosition = () => {
+      const sides: [string, string] = ['bottom', 'top']
+      const style = getOffsetBottom(this.input) < height + offset ? sides[0] : sides[1]
+      const invert = sides[+!sides.indexOf(style)]!
+
+      DomUtils.css(this.hints, {
+        maxHeight: `${this.hintsMaxHeight}px`,
+        [style]: 'calc(100% + 5px)', [invert]: 'unset'
+      })
+    }
+
+    const changeHintSize = () => {
+      const allow = window.innerHeight - before
+      const item = this.hintsItemHeight
+      const height = Math.floor(allow / item) * item
+
+      DomUtils.css(this.hints, { maxHeight: `${height}px` })
+    }
+
+    if (window.innerHeight >= needHeight)
+      changePosition()
+    else if (input.top + offset < height)
+      changeHintSize()
+    else
+      changePosition()
+  }
+
   private toShowHintsBox() {
     const isHasHints = this.getCountHints() > 0
     const showAfterClick = this.attrs.showHintsAfterSelect ? true : !this.isSelected
-    if (isHasHints && showAfterClick) this.setHintsVisible(true)
+
+    if (!(isHasHints && showAfterClick)) return
+
+    this.doAnalyzeHint()
+    this.setHintsVisible()
   }
 
   private selectHintValue(i = 0) {
@@ -258,8 +322,6 @@ class Autocomplete {
 
     this.toHideHintsBox()
     this.updateHints()
-
-    // if (!this.attrs.showHintsAfterSelect) this.input.blur()
 
     this.isSelected = true
     this.notifySelect()
@@ -294,6 +356,8 @@ class Autocomplete {
   private moveByHintItems(isDown: boolean) {
     const list = this.getHintItems()
     const count = list.length
+
+    if (count < 2 && !this.activeHint.index) return
 
     const next = this.activeHint.index === -1
       ? isDown ? 0 : count - 1
@@ -380,6 +444,7 @@ class Autocomplete {
 
     this.isSelected = true
 
+    this.updateHints()
     this.setAdaptiveWidth(label)
     this.notifySelect()
   }
@@ -392,6 +457,10 @@ class Autocomplete {
     this.events.select.push(callback)
   }
 
+  public onKeyPress(keyCode: string, callback: CompleteBindKey['callback']) {
+    this.usingKeys.push({ key: keyCode, callback })
+  }
+
   public updateSuggestions(suggestions: ListOfCompleteData) {
     this.options = this.sortOptions(suggestions)
 
@@ -402,10 +471,6 @@ class Autocomplete {
 
     this.updateHints()
     this.selectFirstHint(true)
-  }
-
-  public bindKeyPress(keyCode: string, callback: CompleteBindKey['callback']) {
-    this.usingKeys.push({ key: keyCode, callback })
   }
 
   /*
@@ -469,13 +534,12 @@ class Autocomplete {
   }
 
   private onFieldInput() {
-    const isShow = this.getCountHints() > 0
-
     this.updateHints()
-    this.setHintsVisible(isShow)
+    this.doAnalyzeHint()
+    this.setHintsVisible()
     this.hideHelperText()
 
-    this.value = ''
+    this.selected = ''
     this.isSelected = false
     this.activeHint = { index: -1, value: '' }
   }
@@ -487,10 +551,9 @@ class Autocomplete {
   }
 
   private onHintOver(e: Event) {
-    if (this.hints === e.target || this.isMoving)
-      return
+    if (this.hints === e.target || this.isMoving) return
 
-    const li = e.target as HTMLLIElement
+    const li = (e.target as HTMLLIElement).closest('li')!
     const index = this.getHintIndex(li)
 
     this.setActiveHint(index)
@@ -533,7 +596,8 @@ class Autocomplete {
     return this.getHintItems().length
   }
 
-  private setHintsVisible(show: boolean) {
+  private setHintsVisible(show = true) {
+    show = this.getCountHints() < 1 ? false : show
     DomUtils.css(this.hints, { display: show ? 'block' : 'none' })
     if (!this.attrs.showHintsAfterSelect) this.hints.scrollTo(0, 0)
   }
@@ -576,7 +640,7 @@ class Autocomplete {
 
   private mergeAttributes(options?: CompleteAttrs): ReqCompleteAttrs {
     if (!options || !Object.keys(options).length)
-      return this.defaultOptions
+      return this.defaultAttrs
 
     function merge<T extends Object>(obj: Partial<T>, def: T) {
       return (Object.keys(def) as (keyof T)[]).reduce<T>((acc, k) => {
@@ -585,7 +649,7 @@ class Autocomplete {
       }, {} as T)
     }
 
-    return merge(options, this.defaultOptions)
+    return merge(options, this.defaultAttrs)
   }
 
   private sortOptions(list: ListOfCompleteData): CompleteOptionsObj[] {

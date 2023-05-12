@@ -56,3 +56,8 @@ export function getTextWidth(str: string, css?: Record<string, string>) {
   div.remove()
   return width ?? 0
 }
+
+export function getOffsetBottom(el: HTMLElement) {
+  const { top, height } = el.getBoundingClientRect()
+  return window.innerHeight - (top + height)
+}
