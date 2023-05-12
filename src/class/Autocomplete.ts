@@ -25,6 +25,7 @@ class Autocomplete {
   private readonly classes
   private readonly usingKeys: CompleteBindKey[] = []
   private readonly uuid: string
+  private readonly isStrict: boolean
 
   private options: CompleteOptionsObj[]
   private selected = ''
@@ -52,6 +53,8 @@ class Autocomplete {
   constructor(input: HTMLInputElement, attrs: CompleteAttrs, initialize = false) {
     this.attrs = this.mergeAttributes(attrs)
     this.options = this.sortOptions(this.attrs.suggestions)
+
+    this.isStrict = this.attrs.isStrictMode
 
     this.classes = {
       wrapper: this.attrs.baseClass,
@@ -84,7 +87,7 @@ class Autocomplete {
     if (this.isInitialized)
       throw new Error('Невозможно повторно инициализировать плагин!')
 
-    if (this.attrs.isStrictMode)
+    if (this.isStrict)
       this.attrs.selectFirstOnBlur = true
 
     this.doRender()
@@ -104,6 +107,7 @@ class Autocomplete {
   }
 
   set value(value: string) {
+    this.selected = value
   }
 
   /** Значение в поле ввода */
@@ -163,11 +167,11 @@ class Autocomplete {
     if (this.attrs.useHelperText)
       wrapper.append(this.helper)
 
-    this.selectFirstHint(this.attrs.isStrictMode)
+    this.selectFirstHint(this.isStrict)
   }
 
   private doEvents() {
-    this.input.addEventListener('focus', this.onFieldFocus.bind(this))
+    this.input.addEventListener('click', this.onFieldClick.bind(this))
     this.input.addEventListener('blur', this.onFieldBlur.bind(this))
     this.input.addEventListener('input', this.onFieldInput.bind(this))
     this.input.addEventListener('keydown', this.onFieldPress.bind(this))
@@ -205,15 +209,14 @@ class Autocomplete {
   /**
    * Обновить список подсказок
    */
-  private updateHints(show = true) {
+  private updateHints() {
+    if (this.attrs.showHintsAfterSelect) return
+
     const list = this.filterHintItems()
     const out = this.buildHints(list)
 
     this.hints.innerHTML = ''
     this.hints.append(...out)
-
-    if (show)
-      this.setHintsVisible(out.length !== 0)
   }
 
   private buildHints(options?: CompleteOptionsObj[]): HTMLLIElement[] {
@@ -239,9 +242,7 @@ class Autocomplete {
   private toShowHintsBox() {
     const isHasHints = this.getCountHints() > 0
     const showAfterClick = this.attrs.showHintsAfterSelect ? true : !this.isSelected
-
-    if (isHasHints && showAfterClick)
-      this.setHintsVisible(true)
+    if (isHasHints && showAfterClick) this.setHintsVisible(true)
   }
 
   private selectHintValue(i = 0) {
@@ -253,19 +254,19 @@ class Autocomplete {
     if (!label || !value) return
 
     this.label = label
-    this.selected = value
+    this.value = value
 
     this.toHideHintsBox()
-    this.updateHints(false)
+    this.updateHints()
 
-    this.input.blur()
+    // if (!this.attrs.showHintsAfterSelect) this.input.blur()
+
     this.isSelected = true
-
     this.notifySelect()
   }
 
   private notifySelect(value?: string) {
-    this.events.select.forEach((cb) => cb(value ?? this.selected))
+    this.events.select.forEach((cb) => cb(value ?? this.value))
   }
 
   private showHelperText(i: number) {
@@ -348,37 +349,35 @@ class Autocomplete {
 
   private toHideHintsBox() {
     this.setHintsVisible(false)
-    this.setActiveHint(-1)
     this.setPlaceholder(null)
     this.hideHelperText()
     this.setAdaptiveWidth()
-  }
 
-  /* TODO: Доработать поиск совпадений */
-  private findHintMatch() {
-    if (!this.getCountHints())
-      return this.options[0]!
-
-    if (this.label.length) {
-      // this.label.slice(0, -1)
-    }
-
-    return this.options[0]!
+    if (!this.attrs.showHintsAfterSelect)
+      this.setActiveHint(-1)
   }
 
   private selectFirstHint(force = false) {
-    if (!this.attrs.selectFirstOnBlur
-      || (force ? false : this.getCountHints() > 1)) return
+    const isNoNeed = [
+      !this.attrs.selectFirstOnBlur,
+      (force ? false : this.getCountHints() > 1),
+      this.isSelected
+    ]
 
-    const { value, label } = (() => {
-      const label = this.getHintData(0, 'label')
-      const value = this.getHintData(0, 'value')
+    if (isNoNeed.some(Boolean)) return
 
-      return label && value ? { value, label } : this.findHintMatch()
-    })()
+    const search = (label: string): CompleteOptionsObj => {
+      const list = this.filterHintItems(label)
+      if (list.length) return list[0]!
+      return search(label.slice(0, -1))
+    }
+
+    const { value, label } = !this.label.length
+      ? this.options[0]! : search(this.label)
 
     this.label = label
-    this.selected = value
+    this.value = value
+
     this.isSelected = true
 
     this.setAdaptiveWidth(label)
@@ -397,11 +396,11 @@ class Autocomplete {
     this.options = this.sortOptions(suggestions)
 
     this.isSelected = false
-    this.selected = ''
+    this.value = ''
     this.label = ''
     this.activeHint = { index: -1, value: '' }
 
-    this.updateHints(false)
+    this.updateHints()
     this.selectFirstHint(true)
   }
 
@@ -413,12 +412,12 @@ class Autocomplete {
    * ======== Events ========
    */
 
-  private onFieldFocus() {
+  private onFieldClick() {
     this.toShowHintsBox()
   }
 
   private onFieldBlur() {
-    this.selectFirstHint(this.attrs.isStrictMode)
+    this.selectFirstHint(this.isStrict)
 
     setTimeout(() => {
       this.toHideHintsBox()
@@ -431,7 +430,7 @@ class Autocomplete {
     ]
 
     if (![...usingKeys, ...this.usingKeys.map(it => it.key)].includes(e.code)) return
-    if (this.isSelected) return
+    if (!this.attrs.showHintsAfterSelect && this.isSelected) return
 
     switch (e.code) {
       // @ts-ignore
@@ -449,7 +448,9 @@ class Autocomplete {
         this.moveByHintItems(isDown)
         break
       case 'Escape':
-        this.toHideHintsBox()
+        const { display } = this.hints.style
+        if (display === 'none') this.input.blur()
+        else this.toHideHintsBox()
         break
       case 'Space':
         if (!e.ctrlKey) return
@@ -468,10 +469,13 @@ class Autocomplete {
   }
 
   private onFieldInput() {
+    const isShow = this.getCountHints() > 0
+
     this.updateHints()
+    this.setHintsVisible(isShow)
     this.hideHelperText()
 
-    this.selected = ''
+    this.value = ''
     this.isSelected = false
     this.activeHint = { index: -1, value: '' }
   }
@@ -509,7 +513,7 @@ class Autocomplete {
     if ([isHints, isInput, isSimilar].some(Boolean))
       return
 
-    this.selectFirstHint(this.attrs.isStrictMode)
+    this.selectFirstHint(this.isStrict)
     this.toHideHintsBox()
   }
 
@@ -529,9 +533,9 @@ class Autocomplete {
     return this.getHintItems().length
   }
 
-  private setHintsVisible(s: boolean) {
-    DomUtils.css(this.hints, { display: s ? 'block' : 'none' })
-    this.hints.scrollTo(0, 0)
+  private setHintsVisible(show: boolean) {
+    DomUtils.css(this.hints, { display: show ? 'block' : 'none' })
+    if (!this.attrs.showHintsAfterSelect) this.hints.scrollTo(0, 0)
   }
 
   private setPlaceholder(text: string | null) {
@@ -562,11 +566,11 @@ class Autocomplete {
     return Math.floor(Math.random() * Date.now()).toString(36)
   }
 
-  private filterHintItems() {
-    const value = this.label.toLowerCase()
+  private filterHintItems(label?: string) {
+    label = (label ?? this.label).toLowerCase()
 
     return this.options.filter((it) => {
-      return it.label.toLowerCase().startsWith(value)
+      return it.label.toLowerCase().startsWith(label!)
     })
   }
 
