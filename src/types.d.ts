@@ -38,6 +38,8 @@ export type CompleteAttrs = {
   showHintsAfterSelect?: boolean
   /** Показывать маркер совпадения в списке подсказок */
   isWithMatchMark?: boolean
+  /** Упрощенная версия поиска по подсказкам, только по началу строки */
+  isSimpleSearch?: boolean
 } & MaybeCompleteAttrs
 
 type ReqCompleteAttrs = Required<Omit<CompleteAttrs, keyof MaybeCompleteAttrs>> & MaybeCompleteAttrs
@@ -46,3 +48,5 @@ type EnumCompleteEvents = 'select'
 type CompleteEventsList = Record<EnumCompleteEvents, ((value: string) => void)[]>
 type CompleteBindKey = { key: string, callback: (ev: KeyboardEvent) => void }
 type CompleteProps = Record<string, string> & { placeholder: string }
+
+type Pair<T = any> = [T, T]

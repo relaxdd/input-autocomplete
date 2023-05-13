@@ -5,14 +5,14 @@ import type {
   CompleteOptionsObj,
   CompleteProps,
   ItemCompleteData,
-  ListOfCompleteData,
+  ListOfCompleteData, Pair,
   ReqCompleteAttrs
 } from "../types";
 import DomUtils from "./DomUtils";
 import { getHeightForced, getOffsetBottom, getTextWidth, round } from "../includes/utils";
 
 /**
- * @version 1.0.5
+ * @version 1.0.6
  * @author awenn2015
  */
 class Autocomplete {
@@ -41,7 +41,8 @@ class Autocomplete {
     isStrictMode: false,
     inputFieldProps: undefined,
     showHintsAfterSelect: true,
-    isWithMatchMark: false
+    isWithMatchMark: false,
+    isSimpleSearch: true
   }
 
   private hintsItemHeight = 0
@@ -136,7 +137,7 @@ class Autocomplete {
     const style = ['paddingLeft', 'paddingRight', 'borderRightWidth', 'borderLeftWidth']
     const sizes = DomUtils.style(this.input, style)
     const plus = sizes.map(it => it ? parseFloat(it) : 0).reduce((n, it) => n + it, 0)
-    const total = width + (plus || def) + 2 // 1px запас на всякий случай
+    const total = width + (plus || def) + 2 // 2px запас на всякий случай
     const minWidth = this.attrs?.minFieldWidth
 
     DomUtils.css(this.input, {
@@ -221,8 +222,8 @@ class Autocomplete {
   /**
    * Обновить список подсказок
    */
-  private updateHints() {
-    if (this.attrs.showHintsAfterSelect) return
+  private updateHints(force = false) {
+    if (!force && this.attrs.showHintsAfterSelect) return
 
     const list = this.filterHintItems()
     const out = this.buildHints(list)
@@ -235,16 +236,34 @@ class Autocomplete {
     options = options || this.options
 
     const slice = this.attrs.hintsLimit !== -1
-      ? options.slice(0, this.attrs.hintsLimit)
-      : options
+      ? options.slice(0, this.attrs.hintsLimit) : options
+
+    const { length } = this.label
+
+    const oneView = (str: string) => {
+      return str.toLowerCase().replace('ё', 'е')
+    }
+
+    const simpleMark = (label: string) => {
+      const start = label.slice(0, length)
+      const finish = label.slice(length)
+
+      return `<mark>${start}</mark><span>${finish}</span>`
+    }
+
+    const advancedMark = (label: string) => {
+      const index = oneView(label).indexOf(oneView(this.label))
+
+      const before = label.slice(0, index)
+      const mark = label.slice(index, index + length)
+      const after = label.slice(index + length)
+
+      return `<span>${before}</span><mark>${mark}</mark><span>${after}</span>`
+    }
 
     const useMark = (label: string) => {
       if (!this.label.length || label === this.label) return label
-
-      const start = label.slice(0, this.label.length)
-      const finish = label.slice(this.label.length)
-
-      return `<mark>${start}</mark><span>${finish}</span>`
+      return this.attrs.isSimpleSearch ? simpleMark(label) : advancedMark(label)
     }
 
     const renderItem = (it: CompleteOptionsObj, i: number) => {
@@ -469,7 +488,7 @@ class Autocomplete {
     this.label = ''
     this.activeHint = { index: -1, value: '' }
 
-    this.updateHints()
+    this.updateHints(true)
     this.selectFirstHint(true)
   }
 
@@ -631,11 +650,19 @@ class Autocomplete {
   }
 
   private filterHintItems(label?: string) {
-    label = (label ?? this.label).toLowerCase()
+    const oneView = (str: string) => {
+      return str.toLowerCase().replaceAll('ё', 'е')
+    }
 
-    return this.options.filter((it) => {
-      return it.label.toLowerCase().startsWith(label!)
-    })
+    label = oneView(label ?? this.label)
+
+    const list: Pair<(str: string) => boolean> = [
+      (str: string) => oneView(str).includes(label!),
+      (str: string) => oneView(str).startsWith(label!)
+    ]
+
+    const index = Number(this.attrs.isSimpleSearch) as 0 | 1
+    return this.options.filter((it) => list[index](it.label))
   }
 
   private mergeAttributes(options?: CompleteAttrs): ReqCompleteAttrs {

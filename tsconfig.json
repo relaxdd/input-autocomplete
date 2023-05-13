@@ -2,6 +2,11 @@
   "compileOnSave": true,
   "compilerOptions": {
     "target": "ES6",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "module": "ESNext",
     "rootDir": "./src",
     "isolatedModules": true,
@@ -26,7 +31,6 @@
     "./src/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    ""
+    "node_modules"
   ]
 }

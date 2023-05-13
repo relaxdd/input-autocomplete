@@ -34,11 +34,13 @@
   border: 1px solid #dee3ea;
   border-radius: 4px;
   max-height: 330px;
-  overflow: auto;
+  overflow: hidden auto;
   box-shadow: 0 1px 3px rgb(2 8 20 / 6%), 0 1px 2px rgb(2 8 20 / 4%);
 }
 
 .nb_autocomplete__hints > li {
+  display: flex;
+  align-items: center;
   padding: 8px 12px;
   font-size: 14px;
   color: #738A9A;
