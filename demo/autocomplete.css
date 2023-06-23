@@ -57,6 +57,10 @@
   color: #020814;
 }
 
+.nb_autocomplete__hints > li > * {
+  padding: 0;
+}
+
 .nb_autocomplete__float {
   color: #757575;
   position: absolute;
